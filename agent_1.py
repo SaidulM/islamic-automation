@@ -1,83 +1,67 @@
 import os
 import requests
-import json
 import re
 
-# পরিবেশ ভেরিয়েবল
+# Credentials
 TG_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
-COMMAND = os.getenv('COMMAND', '').lower()
+COMMAND = os.getenv('COMMAND', '').strip()
 
 def send_tg(text):
+    if not TG_TOKEN or not CHAT_ID: return
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
     requests.post(url, json=payload)
 
-def get_topics():
-    # পদ্ধতি ১: সরাসরি ইউটিউব সার্চ পেজ থেকে তথ্য সংগ্রহের চেষ্টা
+def get_viral_topics():
+    # সরাসরি ইউটিউব থেকে রিসার্চ
     search_query = "islamic+facts+mystery+history+bangla"
     url = f"https://www.youtube.com/results?search_query={search_query}"
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        # ভিডিও টাইটেল খোঁজার আরও উন্নত পদ্ধতি
-        titles = re.findall(r'"title":\{"runs":\[\{"text":"(.*?)"\}\]', response.text)
+        response = requests.get(url, headers=headers, timeout=10)
+        # টাইটেল এক্সট্রাক্ট করার জন্য উন্নত Regex
+        raw_titles = re.findall(r'"title":\{"runs":\[\{"text":"(.*?)"\}\]', response.text)
         
-        # কিছু কমন শব্দ ফিল্টার করা যাতে ভালো টপিক পাওয়া যায়
-        filtered_topics = []
-        for t in titles:
-            t_clean = t.encode('utf-16', 'surrogatepass').decode('utf-16') # ইমোজি হ্যান্ডলিং
-            if any(word in t_clean.lower() for word in ['islam', 'mysterious', 'history', 'allah', 'prophet', 'facts']):
-                if len(t_clean) > 30 and t_clean not in filtered_topics:
-                    filtered_topics.append(t_clean)
-            if len(filtered_topics) >= 3:
-                break
+        topics = []
+        for t in raw_titles:
+            # খুব ছোট বা অপ্রাসঙ্গিক টাইটেল বাদ দেওয়া
+            if len(t) > 35 and t not in topics:
+                topics.append(t)
+            if len(topics) == 3: break
         
-        if filtered_topics:
-            return filtered_topics
-            
-    except Exception as e:
-        print(f"Scraping error: {e}")
-
-    # পদ্ধতি ২: যদি উপরের পদ্ধতি কাজ না করে তবে স্ট্যাটিক ট্রেন্ডিং টপিক (ফেইলসেফ)
-    return [
-        "পৃথিবীর রহস্যময় ৫টি ইসলামিক স্থান যা আপনাকে অবাক করবে",
-        "ইতিহাসের পাতায় হারানো এক মহান মুসলিম বীরের কাহিনী",
-        "বিজ্ঞান ও ইসলামের অলৌকিক কিছু তথ্য যা জানা প্রয়োজন"
-    ]
+        # যদি ইউটিউব থেকে না পাওয়া যায়, তবে ৩টি ডিফল্ট ভাইরাল টপিক
+        if not topics:
+            topics = [
+                "পবিত্র কাবার ভেতরে কি আছে? যা জানলে আপনি অবাক হবেন",
+                "ইতিহাসের শ্রেষ্ঠ ৫ জন মুসলিম বিজ্ঞানী এবং তাদের আবিষ্কার",
+                "কিয়ামতের আগে দাজ্জাল যে স্থানে আত্মপ্রকাশ করবে"
+            ]
+        return topics
+    except:
+        return ["ইসলামিক রহস্যময় ঘটনা", "ইতিহাসের অজানা তথ্য", "সেরা ৩টি ইসলামিক উপদেশ"]
 
 def main():
-    if not TG_TOKEN or not CHAT_ID:
-        print("Missing Telegram Credentials")
-        return
+    if not COMMAND: return
 
-    if COMMAND == "/start":
-        send_tg("<b>আসসালামু আলাইকুম!</b>\nআমি আপনার জন্য ভাইরাল ইসলামিক টপিক খুঁজছি। একটু সময় দিন...")
+    if COMMAND.lower() == "/start":
+        send_tg("🌙 <b>আসসালামু আলাইকুম!</b>\nআমি ভাইরাল ইসলামিক টপিক রিসার্চ করছি...")
+        topics = get_viral_topics()
         
-        topics = get_topics()
+        msg = "🔍 <b>আমি আজ এই ৩টি ভাইরাল টপিক খুঁজে পেয়েছি:</b>\n\n"
+        for i, t in enumerate(topics, 1):
+            msg += f"<b>{i}.</b> {t}\n"
         
-        message = "🔍 <b>আমি আজ এই ৩টি ভাইরাল টপিক খুঁজে পেয়েছি:</b>\n\n"
-        for i, topic in enumerate(topics, 1):
-            message += f"<b>{i}.</b> {topic}\n"
-        
-        message += "\nআপনি কোনটি নিয়ে কাজ করতে চান? (১, ২ বা ৩ লিখে আমাকে রিপ্লাই দিন)"
-        send_tg(message)
+        msg += "\nআপনি কোনটি নিয়ে কাজ করতে চান? <b>১, ২ বা ৩</b> লিখে রিপ্লাই দিন।"
+        send_tg(msg)
 
     elif COMMAND in ["1", "2", "3"]:
-        # এখানে পরে Qwen মডেলের স্ক্রিপ্ট জেনারেশন যোগ হবে
-        topic_idx = int(COMMAND) - 1
-        send_tg(f"✅ আপনি <b>টপিক {COMMAND}</b> পছন্দ করেছেন।\nআমি এখন এটি নিয়ে চমৎকার একটি স্ক্রিপ্ট লিখছি। (Qwen Model loading...)")
-        
-        # পরবর্তী ধাপের জন্য সেভ করার মেসেজ (টেস্ট)
-        send_tg("<i>স্ক্রিপ্ট তৈরির কাজ চলছে, এটি শেষ হলে আমি আপনাকে জানাব।</i>")
-
+        send_tg(f"✅ আপনি <b>টপিক {COMMAND}</b> পছন্দ করেছেন।\nআমি এখন স্ক্রিপ্ট রাইটিং ইঞ্জিন (Qwen2.5) লোড করছি। একটু অপেক্ষা করুন...")
+        # পরবর্তী ধাপে এখানে স্ক্রিপ্ট জেনারেটর কল হবে
     else:
-        if COMMAND:
-            send_tg("নতুন রিসার্চ শুরু করতে চাইলে <b>/start</b> লিখুন।")
+        # অযথা মেসেজে যাতে গিটহাব রান না হয়, তাই ছোট রেসপন্স
+        print(f"Unknown command: {COMMAND}")
 
 if __name__ == "__main__":
     main()
