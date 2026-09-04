@@ -9,6 +9,8 @@ State machine (Apps Script PropertiesService-এ session হিসেবে জ�
 """
 import os
 import sys
+import threading
+import time
 import difflib
 
 from scripts import sheet_client, telegram_utils, llm_client
@@ -17,13 +19,30 @@ CHAT_ID = os.environ["CHAT_ID"]
 TEXT = os.environ.get("MESSAGE_TEXT", "").strip()
 TRIGGER_SOURCE = os.environ.get("TRIGGER_SOURCE", "telegram")  # telegram | scheduled
 
+# ============================================================
+# টাইপিং ইন্ডিকেটর — GitHub Action চলাকালীন প্রতি ৪ সেকেন্ডে "typing"
+# পাঠাতে থাকে একটা আলাদা background thread-এ, যতক্ষণ না কাজ শেষ হয়।
+# (Apps Script আর অপেক্ষা করে না, তাই এই দায়িত্ব এখন এখানে)
+# ============================================================
+_stop_typing = threading.Event()
+
+
+def _typing_loop():
+    while not _stop_typing.is_set():
+        telegram_utils.send_typing(CHAT_ID)
+        _stop_typing.wait(4)
+
+
+_typing_thread = threading.Thread(target=_typing_loop, daemon=True)
+_typing_thread.start()
+
 START_WORDS = {"start", "শুরু", "/start"}
 APPROVE_WORDS = {"approve", "ঠিক আছে", "পছন্দ হয়েছে", "হ্যাঁ", "ok", "okay"}
 REJECT_WORDS = {"না", "পছন্দ হয়নি", "regenerate", "আবার", "again", "reject"}
 
 
 def finish():
-    sheet_client.set_job_done()
+    _stop_typing.set()
     sys.exit(0)
 
 
