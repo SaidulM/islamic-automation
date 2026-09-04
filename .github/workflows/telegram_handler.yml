@@ -1,0 +1,43 @@
+name: Telegram Handler
+
+on:
+  repository_dispatch:
+    types: [telegram_message]
+
+jobs:
+  handle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Qwen model
+        id: cache-model
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: qwen2.5-3b-instruct-q4km-v1
+
+      - name: Download model (only on cache miss)
+        if: steps.cache-model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p models
+          curl -L -o models/qwen2.5-3b-instruct-q4_k_m.gguf \
+            "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt --prefer-binary
+
+      - name: Run handler
+        env:
+          CHAT_ID: ${{ github.event.client_payload.chat_id }}
+          MESSAGE_TEXT: ${{ github.event.client_payload.text }}
+          TRIGGER_SOURCE: telegram
+          MODEL_PATH: models/qwen2.5-3b-instruct-q4_k_m.gguf
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python -m scripts.handle_message

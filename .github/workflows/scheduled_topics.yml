@@ -1,0 +1,32 @@
+name: Scheduled Topic Send
+
+on:
+  schedule:
+    # আপনার ফিক্স করা সময়: সকাল ৬টা, দুপুর ২টা, সন্ধ্যা ৬টা IST (UTC = IST - 5:30)
+    - cron: "30 0 * * *"   # সকাল ৬টা IST
+    - cron: "30 8 * * *"   # দুপুর ২টা IST
+    - cron: "30 12 * * *"  # সন্ধ্যা ৬টা IST
+  workflow_dispatch: {}
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Send scheduled topics
+        env:
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MESSAGE_TEXT: "start"
+          TRIGGER_SOURCE: scheduled
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python -m scripts.handle_message
