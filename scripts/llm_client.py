@@ -1,56 +1,35 @@
 """
-Qwen2.5-3B-Instruct (GGUF, quantized) দিয়ে লোকাল inference — সম্পূর্ণ ফ্রি,
-কোনো API key লাগে না। মডেল ফাইলটা workflow-এর মধ্যে cache/download হয়ে
-MODEL_PATH-এ রেডি থাকে (দেখুন .github/workflows/)।
+Groq API (সম্পূর্ণ ফ্রি, কোনো কার্ড লাগে না, LPU hardware-এ চলে বলে
+সেকেন্ডে রেসপন্স দেয়) দিয়ে script generation, humanize পাস, metadata।
 
-⚠️ নোট: GitHub Actions-এর ফ্রি রানারে GPU নেই, তাই CPU-তে চলে — একটা
-স্ক্রিপ্ট জেনারেট হতে ১-৫ মিনিট লাগতে পারে। এটাই কেন Apps Script "typing"
-loop-টা দরকার (ব্যবহারকারী বসে বসে টাইপিং দেখবে, ফলাফলের অপেক্ষায়)।
+মডেল: llama-3.3-70b-versatile — কোনো ডাউনলোড/ক্যাশ লাগে না, প্রতিটা
+কল সরাসরি Groq-এর সার্ভারে যায়।
 """
 import os
-from llama_cpp import Llama
+import requests
 
-MODEL_PATH = os.environ.get("MODEL_PATH", "./models/qwen2.5-3b-instruct-q4_k_m.gguf")
-
-_llm = None
-
-
-def _get_llm():
-    global _llm
-    if _llm is None:
-        _llm = Llama(model_path=MODEL_PATH, n_ctx=4096, n_threads=2, verbose=False)
-    return _llm
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODEL = "llama-3.3-70b-versatile"
 
 
-def _chat(system_prompt, user_prompt, max_tokens=700, temperature=0.8):
-    llm = _get_llm()
-    result = llm.create_chat_completion(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        max_tokens=max_tokens,
-        temperature=temperature,
+def _chat(system_prompt, user_prompt, max_tokens=900, temperature=0.8):
+    resp = requests.post(
+        GROQ_URL,
+        headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+        json={
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        },
+        timeout=60,
     )
-    return result["choices"][0]["message"]["content"].strip()
-
-
-def suggest_topics(seed_titles, n=50):
-    """YouTube-এ trending Islamic শর্ট ভিডিওর টাইটেল দেখে নতুন, unique টপিক আইডিয়া বানানো (কপি না করে)"""
-    system = (
-        "You are a content strategist for Islamic short-form YouTube videos (60 seconds, Hindi audience). "
-        "You generate ORIGINAL topic ideas inspired by trends, never copying existing titles."
-    )
-    user = (
-        f"Here are some currently trending Islamic short-video titles:\n"
-        f"{chr(10).join('- ' + t for t in seed_titles[:20])}\n\n"
-        f"Suggest {n} NEW, original topic ideas for 60-second Islamic short videos "
-        f"(Quranic teachings, hadith-based motivation, or Islamic cartoon storytelling). "
-        f"One topic per line, in English, no numbering, no explanation."
-    )
-    raw = _chat(system, user, max_tokens=1200, temperature=0.9)
-    lines = [l.strip("-• ").strip() for l in raw.split("\n") if l.strip()]
-    return lines[:n]
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
 
 
 def generate_script(topic_en):
