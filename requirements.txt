@@ -1,2 +1,1 @@
 requests
-llama-cpp-python
